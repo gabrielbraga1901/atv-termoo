@@ -3,6 +3,6 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\TermooController;
 
-Route::post('/iniciar-jogo', [TermooController::class, 'iniciarJogo']);
+Route::post('/novo-jogo', [TermooController::class, 'novoJogo']);
 
-Route::post('/validar-tentativa', [TermooController::class, 'validarTentativa']);
+Route::post('/testar-palavra', [TermooController::class, 'testarPalavra']);

@@ -4,102 +4,79 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class TermooController extends Controller
 {
-    private static $jogos = [];
+    private $maxTentativas = 6;
 
-    public function iniciarJogo()
+    public function novoJogo()
     {
-        $palavras = config('palavras.palavras');
+        $config = include config_path('palavras.php');
 
-        $palavraSecreta = mb_strtolower($palavras[array_rand($palavras)]);
+        $palavras = $config['palavras'];
+
+        $palavraAleatoria = $palavras[array_rand($palavras)];
 
         $idJogo = Str::uuid()->toString();
 
-        self::$jogos[$idJogo] = [
-            'palavra' => $palavraSecreta,
+        Cache::put($idJogo, [
+            'palavra' => $palavraAleatoria,
             'tentativas' => 0
-        ];
+        ], now()->addHours(2));
 
         return response()->json([
             'idJogo' => $idJogo,
             'tamanhoPalavra' => 5,
-            'tentativasMaximas' => 6
-        ], 200);
+            'tentativasMaximas' => $this->maxTentativas
+        ]);
     }
 
-    public function validarTentativa(Request $request)
+    public function testarPalavra(Request $request)
     {
         $request->validate([
-            'idJogo' => 'required|string',
-            'palavra' => 'required|string|size:5'
+            'idJogo' => 'required',
+            'palavra' => 'required|size:5'
         ]);
 
-        $idJogo = $request->idJogo;
-        $palavraTentativa = mb_strtolower($request->palavra);
+        $jogo = Cache::get($request->idJogo);
 
-        if (!isset(self::$jogos[$idJogo])) {
+        if (!$jogo) {
             return response()->json([
                 'erro' => 'Jogo não encontrado'
             ], 404);
         }
 
-        $palavras = config('palavras.palavras');
-
-        $palavraValida = in_array($palavraTentativa, $palavras);
-
-        if (!$palavraValida) {
-            return response()->json([
-                'resultado' => [],
-                'venceu' => false,
-                'tentativasRestantes' => 6 - self::$jogos[$idJogo]['tentativas'],
-                'palavraValida' => false
-            ], 200);
-        }
-
-        $palavraSecreta = self::$jogos[$idJogo]['palavra'];
-
-        self::$jogos[$idJogo]['tentativas']++;
+        $tentativa = strtolower($request->palavra);
+        $correta = strtolower($jogo['palavra']);
 
         $resultado = [];
 
-        $letrasSecretas = mb_str_split($palavraSecreta);
-        $letrasTentativa = mb_str_split($palavraTentativa);
-
         for ($i = 0; $i < 5; $i++) {
 
-            $letra = $letrasTentativa[$i];
-
-            if ($letra === $letrasSecretas[$i]) {
-
-                $status = 'correta';
-
-            } elseif (in_array($letra, $letrasSecretas)) {
-
-                $status = 'presente';
-
+            if ($tentativa[$i] == $correta[$i]) {
+                $status = 'certa';
+            } elseif (str_contains($correta, $tentativa[$i])) {
+                $status = 'existe';
             } else {
-
-                $status = 'ausente';
+                $status = 'errada';
             }
 
             $resultado[] = [
-                'letra' => $letra,
+                'letra' => $tentativa[$i],
                 'status' => $status
             ];
         }
 
-        $venceu = ($palavraTentativa === $palavraSecreta);
+        $jogo['tentativas']++;
 
-        $tentativasRestantes = 6 - self::$jogos[$idJogo]['tentativas'];
+        Cache::put($request->idJogo, $jogo, now()->addHours(2));
 
         return response()->json([
             'resultado' => $resultado,
-            'venceu' => $venceu,
-            'tentativasRestantes' => $tentativasRestantes,
-            'palavraValida' => true
-        ], 200);
+            'tentativas' => $jogo['tentativas'],
+            'venceu' => $tentativa == $correta
+        ]);
     }
 }
